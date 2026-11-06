@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f6f2" />
+    <meta
+      name="description"
+      content="CRESCENT — discover music, culture, food and experiences worth showing up for in Pakistan. A complete frontend ticket booking demo."
+    />
+    <title>Discover your next experience | CRESCENT</title>
+    <link rel="icon" href="assets/icons/crescent.svg" type="image/svg+xml" />
+    <link
+      rel="preload"
+      href="assets/fonts/manrope-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script src="assets/js/theme.js"></script>
+    <link rel="stylesheet" href="assets/css/tailwind.css" />
+    <link rel="stylesheet" href="assets/css/styles.css" />
+    <link rel="stylesheet" href="assets/css/design-system.css" />
+    <script defer src="assets/vendor/gsap.min.js"></script>
+    <script defer src="assets/vendor/qrcode.js"></script>
+    <script type="module" src="assets/js/main.js"></script>
+  </head>
+  <body data-page="events">
+    <div id="brand-loader" aria-hidden="true">
+      <svg class="loader-crescent" viewBox="0 0 180 180">
+        <path
+          d="M145 12C75-9 10 36 10 94s57 97 119 72C64 170 31 106 63 54c17-28 47-43 82-42Z"
+        /></svg
+      ><span>CRESCENT</span><small>MAKE ROOM FOR THE MOMENT</small>
+    </div>
+    <div id="site-header"></div>
+    <main id="main" tabindex="-1"></main>
+    <div id="site-footer"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript
+      ><div class="container empty-state">
+        <h1>Make room for the moment.</h1>
+        <p>
+          Enable JavaScript to discover events and use this frontend booking
+          demo.
+        </p>
+      </div></noscript
+    >
+  </body>
+</html>

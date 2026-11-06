@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@source "../../*.html";
+@source "../js/*.js";
+@theme {
+  --color-paper: #f7f6f2;
+  --color-ink: #20211f;
+  --color-accent: #d9362b;
+  --font-sans: "Manrope", Arial, sans-serif;
+}

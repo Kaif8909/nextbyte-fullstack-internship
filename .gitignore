@@ -1,7 +1,40 @@
+# Dependencies and local build caches
 node_modules/
+/.cache/
+/coverage/
+/dist/
+/build/
+*.tsbuildinfo
+
+# Environment files and private configuration
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Local AI tools, skills and editor settings
+.agents/
+.codex/
+.codex-plugin/
+.vscode/
+
+# Temporary browser QA output (keep curated docs/screenshots)
+.playwright-mcp/
+playwright-report/
+test-results/
+*.log
+*.tmp
+*.temp
+/*.zip
+
+# Local databases and operating-system files
 *.db
 *.sqlite
 *.sqlite3
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# Intentionally committed: assets/css/tailwind.css and vendored browser assets.
