@@ -1,5 +1,7 @@
 # Week 1: API flow
 
+> **Week 3 implementation note (November 2026):** This was the original design sketch. The working server now uses Node.js built-in `http` and `node:sqlite`, not Express. The implemented endpoints also include demo event creation, ticket booking, health, and booking lookup. See [README](../README.md#week-3-rest-api-reference) for the authoritative API specification.
+
 An API is how the website's frontend asks its backend for event data or sends registration details.
 
 ## Planned endpoints

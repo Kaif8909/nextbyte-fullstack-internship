@@ -7,7 +7,9 @@
     "build:css": "tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --minify",
     "watch:css": "tailwindcss -i ./assets/css/input.css -o ./assets/css/tailwind.css --watch",
     "serve": "python -m http.server 8000",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "dev": "node server/index.js",
+    "test:api": "node --test tests/api.test.js"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.0",
@@ -16,5 +18,8 @@
   "dependencies": {
     "gsap": "^3.13.0",
     "qrcode-generator": "^2.0.4"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

@@ -8,6 +8,7 @@ import {
 } from "./data.js";
 import { esc, icon, card, eventMini, empty, toast } from "./components.js";
 import { KEYS, read, save, list } from "./storage.js";
+import { apiPost } from "./api.js";
 export function calculate(items) {
   const subtotal = items.reduce((s, t) => s + t.price * t.quantity, 0);
   const fee = Math.round(subtotal * 0.05);
@@ -225,12 +226,12 @@ export function initSelection(e) {
 export function checkout() {
   const v = validateCart(read(KEYS.cart, null));
   if (v.error) return empty("Your plans need a ticket.", v.error);
-  return `<section class="container booking-page">${steps(1)}<a class="back-link" href="tickets.html?id=${v.event.id}">← Back to tickets</a><div class="section-heading"><div><span class="eyebrow">JUST A FEW DETAILS</span><h1>Almost a memory.</h1><p>Tell us who’s coming. Your demo tickets are one step away.</p></div></div><div class="checkout-layout"><form id="checkout-form" class="checkout-form" aria-labelledby="checkout-form-heading"><h2 id="checkout-form-heading">Your details</h2><p>All fields are required. Your details stay in this browser.</p><label for="customer-name">Full name<input id="customer-name" name="name" autocomplete="name" placeholder="Your full name" minlength="2" maxlength="100" required></label><label for="customer-email">Email address<input id="customer-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="150" required></label><label for="customer-phone">Phone number<input id="customer-phone" name="phone" type="tel" autocomplete="tel" placeholder="+92 300 1234567" maxlength="25" required></label><fieldset><legend>Choose a demo payment method</legend><label class="payment-option"><input type="radio" name="payment" value="demo-card" checked> ${icon("shield")} Simulated card payment <span>DEMO</span></label><label class="payment-option"><input type="radio" name="payment" value="demo-wallet"> ${icon("ticket")} Simulated mobile wallet <span>DEMO</span></label></fieldset><div class="demo-note">${icon("shield")}<div><strong>All the excitement. None of the charge.</strong><p>This checkout simulates a successful payment. Do not enter real card or financial details. No payment information is requested or saved.</p></div></div><label class="checkbox-label"><input type="checkbox" name="consent" required> I understand this is a demo booking and tickets are not valid for event admission.</label><p id="checkout-error" class="form-error" role="alert"></p><button type="submit" class="btn btn-red w-full" id="confirm-booking">Confirm demo booking ${icon("arrow")}</button></form><aside class="order-summary"><span class="eyebrow">LOOKING FORWARD TO THIS?</span>${eventMini(v.event)}${summaryMarkup(v.items)}<p class="fine-print">${icon("shield")} No real payment will be processed.</p></aside></div></section>`;
+  return `<section class="container booking-page">${steps(1)}<a class="back-link" href="tickets.html?id=${v.event.id}">← Back to tickets</a><div class="section-heading"><div><span class="eyebrow">JUST A FEW DETAILS</span><h1>Almost a memory.</h1><p>Tell us who’s coming. Your demo tickets are one step away.</p></div></div><div class="checkout-layout"><form id="checkout-form" class="checkout-form" aria-labelledby="checkout-form-heading"><h2 id="checkout-form-heading">Your details</h2><p>All fields are required. Your details are stored on this local demo server.</p><label for="customer-name">Full name<input id="customer-name" name="name" autocomplete="name" placeholder="Your full name" minlength="2" maxlength="100" required></label><label for="customer-email">Email address<input id="customer-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="150" required></label><label for="customer-phone">Phone number<input id="customer-phone" name="phone" type="tel" autocomplete="tel" placeholder="+92 300 1234567" maxlength="25" required></label><fieldset><legend>Choose a demo payment method</legend><label class="payment-option"><input type="radio" name="payment" value="demo-card" checked> ${icon("shield")} Simulated card payment <span>DEMO</span></label><label class="payment-option"><input type="radio" name="payment" value="demo-wallet"> ${icon("ticket")} Simulated mobile wallet <span>DEMO</span></label></fieldset><div class="demo-note">${icon("shield")}<div><strong>All the excitement. None of the charge.</strong><p>This checkout simulates a successful payment. Do not enter real card or financial details. No payment information is requested or saved.</p></div></div><label class="checkbox-label"><input type="checkbox" name="consent" required> I understand this is a demo booking and tickets are not valid for event admission.</label><p id="checkout-error" class="form-error" role="alert"></p><button type="submit" class="btn btn-red w-full" id="confirm-booking">Confirm demo booking ${icon("arrow")}</button></form><aside class="order-summary"><span class="eyebrow">LOOKING FORWARD TO THIS?</span>${eventMini(v.event)}${summaryMarkup(v.items)}<p class="fine-print">${icon("shield")} No real payment will be processed.</p></aside></div></section>`;
 }
 export function initCheckout() {
   const form = document.getElementById("checkout-form");
   if (!form) return;
-  form.addEventListener("submit", (ev) => {
+  form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const error = document.getElementById("checkout-error");
     const v = validateCart(read(KEYS.cart, null));
@@ -254,36 +255,27 @@ export function initCheckout() {
     const b = document.getElementById("confirm-booking");
     b.disabled = true;
     b.textContent = "Making your plans…";
-    let id;
-    do {
-      id = "CR-" + crypto.randomUUID().slice(0, 8).toUpperCase();
-    } while (list(KEYS.bookings).some((booking) => booking.id === id));
-    const booking = {
-      id,
-      eventId: v.event.id,
-      event: { ...v.event },
-      items: v.items.map(({ id, name, price, quantity }) => ({
-        id,
-        name,
-        price,
-        quantity,
-      })),
-      subtotal: v.subtotal,
-      fee: v.fee,
-      total: v.total,
-      customer: { name, email, phone },
-      payment: f.get("payment"),
-      createdAt: new Date().toISOString(),
-    };
-    if (!save(KEYS.bookings, [...list(KEYS.bookings), booking])) {
-      error.textContent =
-        "Your browser could not save this booking. Free some storage and try again.";
+    try {
+      const response = await apiPost('/api/bookings', {
+        eventId: v.event.id,
+        items: v.items.map(({ id, quantity }) => ({ id, quantity })),
+        customer: { name, email, phone },
+        payment: f.get('payment'),
+        consent: f.get('consent') === 'on'
+      });
+      const booking = response.booking;
+      if (!save(KEYS.bookings, [...list(KEYS.bookings), booking])) {
+        error.textContent = `The server saved your booking (${booking.id}), but your browser could not store a local copy. Please keep this reference.`;
+        return;
+      }
+      save(KEYS.cart, null);
+      location.href = `confirmation.html?ref=${encodeURIComponent(booking.id)}`;
+    } catch (err) {
+      error.textContent = err.message;
+    } finally {
       b.disabled = false;
       b.textContent = "Confirm demo booking";
-      return;
     }
-    save(KEYS.cart, null);
-    location.href = `confirmation.html?ref=${encodeURIComponent(id)}`;
   });
 }
 export function bookingFromUrl() {
@@ -304,7 +296,7 @@ export function confirmation() {
       "my-tickets.html",
       "View my tickets",
     );
-  return `<section class="container confirmation-page"><div class="confirmation-copy"><div class="success-mark">${icon("check")}</div><span class="eyebrow">IT’S OFFICIALLY A PLAN</span><h1>You’re going.<br><em>Good things await.</em></h1><p>Your demo booking is confirmed. Here’s a little reminder of something to look forward to.</p><div class="confirmation-details"><div><span>BOOKING REFERENCE</span><strong>${esc(b.id)}</strong></div><div><span>BOOKED BY</span><strong>${esc(b.customer.name)}</strong><small>${esc(b.customer.email)}</small><small>${esc(b.customer.phone)}</small></div><div><span>DEMO TOTAL</span><strong>${money(b.total)}</strong></div></div><a class="btn btn-red" href="my-tickets.html">View my tickets ${icon("arrow")}</a><p class="fine-print">Saved in this browser. No email is sent. No charge was made.<br>This demo ticket is not valid for entry.</p></div><div class="confirmation-ticket">${ticketPreview(b)}</div></section>`;
+  return `<section class="container confirmation-page"><div class="confirmation-copy"><div class="success-mark">${icon("check")}</div><span class="eyebrow">IT’S OFFICIALLY A PLAN</span><h1>You’re going.<br><em>Good things await.</em></h1><p>Your demo booking is confirmed. Here’s a little reminder of something to look forward to.</p><div class="confirmation-details"><div><span>BOOKING REFERENCE</span><strong>${esc(b.id)}</strong></div><div><span>BOOKED BY</span><strong>${esc(b.customer.name)}</strong><small>${esc(b.customer.email)}</small><small>${esc(b.customer.phone)}</small></div><div><span>DEMO TOTAL</span><strong>${money(b.total)}</strong></div></div><a class="btn btn-red" href="my-tickets.html">View my tickets ${icon("arrow")}</a><p class="fine-print">Saved on the demo server and cached in this browser. No email is sent. No charge was made.<br>This demo ticket is not valid for entry.</p></div><div class="confirmation-ticket">${ticketPreview(b)}</div></section>`;
 }
 export function myTickets() {
   return `<section class="container page-intro"><span class="eyebrow">YOUR PLANS, ALL IN ONE PLACE</span><div class="page-title-row"><h1>Something to<br><em>look forward to.</em></h1><p>Your saved demo bookings live here.<br>The best part? Showing up.</p></div></section><section class="container tickets-section"><div class="tabs" role="group" aria-label="Ticket status"><button class="active" data-booking-tab="upcoming" aria-pressed="true">Upcoming plans</button><button data-booking-tab="past" aria-pressed="false">Past memories</button></div><div id="bookings-list"></div></section><dialog id="ticket-dialog" aria-labelledby="ticket-dialog-title"><div class="dialog-header"><h2 id="ticket-dialog-title">Your demo ticket</h2><button class="icon-button" id="close-dialog" aria-label="Close ticket">${icon("close")}</button></div><div id="ticket-dialog-content"></div></dialog>`;

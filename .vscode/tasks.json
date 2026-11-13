@@ -1,0 +1,28 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Start EventEase server",
+            "type": "shell",
+            "command": "npm.cmd run dev",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "isBackground": true,
+            "problemMatcher": [],
+            "runOptions": {
+                "runOn": "folderOpen",
+                "instanceLimit": 1
+            },
+            "presentation": {
+                "reveal": "never",
+                "panel": "dedicated",
+                "close": false
+            }
+        }
+    ]
+}
