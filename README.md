@@ -1,6 +1,8 @@
 # CRESCENT — make room for the moment
 
-A responsive event discovery and demo ticket-booking system, now with a Node.js REST API and SQLite persistence, built on the original EventEase project. Eight pages, 22 fictional experiences across ten categories, local photography, original SVG branding, and an animated crescent introduction.
+A responsive event discovery and demo ticket-booking system with a Node.js REST API, hosted PostgreSQL persistence and offline SQLite development, built on the original EventEase project. Eight pages, 22 fictional experiences across ten categories, local photography, original SVG branding, and an animated crescent introduction.
+
+Vercel deployment setup, database migration/import, environment variables, access control and acceptance checks are documented in [docs/vercel-deployment.md](docs/vercel-deployment.md). The function configuration is prepared for review; a successful hosted deployment must still be verified after database and Vercel setup.
 
 ## Run locally (Week 3)
 
@@ -23,7 +25,7 @@ Run automated tests with:
 npm.cmd test
 ```
 
-The SQLite database is created automatically in `server/data/eventease.sqlite` and is excluded from Git. Stop the server before moving or deleting the database files. Do not commit real attendee details.
+Without `DATABASE_URL`, local development creates SQLite in `server/data/eventease.sqlite`. With `DATABASE_URL`, it uses PostgreSQL. `.env.local` is loaded by development and database scripts and is excluded from Git. Vercel requires PostgreSQL and never creates a local database. Run `npm.cmd run db:migrate` and `npm.cmd run db:seed` once before using a fresh PostgreSQL database. Stop the local server before backing up SQLite. Do not commit attendee details or credentials.
 
 ## Pages and working interactions
 
@@ -56,17 +58,18 @@ Use the theme selector in the top navigation to choose **Light**, **Dark**, or *
 
 All endpoints use `http://localhost:3000` and return JSON with `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. **POST** requests must include `Content-Type: application/json` (an optional charset parameter is accepted). The service accepts bodies up to 64 KiB (65,536 bytes); the body must be a UTF-8 JSON object, not an array, scalar or null. Dates are strings such as `2099-12-15T19:00:00+05:00`. All ticket amounts are **PKR** integers; they are demo values, not real payments.
 
-The same Node process serves the HTML frontend at `/` and its `/assets/*` files with GET or HEAD. Run only `npm.cmd run dev` for Week 3; the default VS Code task also uses this command. No Python server or Live Server is needed. `PORT` overrides the default 3000 and `DB_PATH` overrides the database path; environment variables must be set in the shell (the server does not automatically load `.env` files).
+Locally, the same Node process serves the HTML frontend at `/` and its `/assets/*` files with GET or HEAD. Run only `npm.cmd run dev`; the default VS Code task also uses this command. No Python server or Live Server is needed. `PORT` overrides the default 3000; `DB_PATH` overrides the offline SQLite path. Development and database scripts load `.env.local`; hosted secrets are set in Vercel settings. On Vercel, static pages come from generated `public/` and `/api/*` goes to `api/index.js` without a listening development server.
 
 | Method | Endpoint | Inputs | Success | Common failures |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/health` | None | `200` server health | `500` internal error |
+| `GET` | `/api/health` | None | `200` database connectivity health | `503` database unavailable |
 | `GET` | `/api/events` | Optional `q`, `city`, `category` query strings | `200` `{ "events": [...], "count": 22 }` | `500` internal error |
 | `GET` | `/api/events/:id` | Event slug, e.g. `after-hours` | `200` `{ "event": {...}, "tickets": [...] }` | `404` event not found |
 | `POST` | `/api/events` | JSON event details (see below) | `201` `{ "event": {...} }` | `400` invalid JSON, `422` invalid fields |
 | `POST` | `/api/events/:id/registrations` | JSON `full_name`, `email` | `201` with registration ID | `404` event missing, `409` duplicate/full/ended, `422` invalid fields |
+| `GET` | `/api/events/:id/registrations` | Organizer Bearer token authorized for event | `200` `{ "registrations": [...], "count": 0 }` | `401` missing/invalid credential, `403` wrong event, `404` event missing |
 | `POST` | `/api/bookings` | JSON event ID, ticket items, customer, payment, consent | `201` `{ "booking": {...} }` | `404` event missing, `409` sold out/ended, `422` invalid fields |
-| `GET` | `/api/bookings/:reference` | Random booking reference | `200` `{ "booking": {...} }` | `404` booking missing |
+| `GET` | `/api/bookings/:reference` | Reference and scoped Bearer token | `200` `{ "booking": {...} }` | `401` missing/invalid token, `403` wrong scope, `404` booking missing |
 
 **GET `/api/events` example:** `http://localhost:3000/api/events?city=Karachi&category=Music`
 
@@ -78,10 +81,10 @@ Read requests, usable in PowerShell:
 curl.exe http://localhost:3000/api/health
 curl.exe "http://localhost:3000/api/events?q=music&city=Karachi&category=Music"
 curl.exe http://localhost:3000/api/events/after-hours
-curl.exe http://localhost:3000/api/bookings/CR-0123456789ABCDEF0123456789ABCDEF
+curl.exe http://localhost:3000/api/bookings/CR-0123456789ABCDEF0123456789ABCDEF -H "Authorization: Bearer <booking-receipt-token>"
 ```
 
-Health returns `{ "status": "ok", "database": "sqlite", "demo": true }`. This is a process health response, not a database integrity check. Event detail returns the event plus three ticket pools, each with `id`, `name`, `price`, `capacity` and `remaining`. Event objects contain `id`, `title`, `description`, `category`, `city`, `venue`, `date`, `organizer`, `price`, `capacity`, `image`, `popularity`, `duration`, `highlights` and `schedule`.
+Health runs a database connectivity query and returns `{ "status": "ok", "database": "postgresql", "demo": true }` (`sqlite` for offline development), or `503 DATABASE_UNAVAILABLE`. It is not a full integrity check. Event detail returns the event plus three ticket pools, each with `id`, `name`, `price`, `capacity` and `remaining`. Event objects contain `id`, `title`, `description`, `category`, `city`, `venue`, `date`, `organizer`, `price`, `capacity`, `image`, `popularity`, `duration`, `highlights` and `schedule`.
 
 Routes and methods must match exactly (no trailing slash). No update or delete endpoints are implemented. Known endpoints reject unsupported methods with `405`; unknown routes return `404`. API HEAD and OPTIONS requests have no special handling and are not supported. The server does not enable cross-origin API access.
 
@@ -131,7 +134,7 @@ Successful registration response (`201`):
 { "registration_id": 1, "event_id": "after-hours", "full_name": "Demo Attendee", "email": "demo@example.com", "message": "Registration successful" }
 ```
 
-The ID and event ID above are illustrative. Use a future event with available seats. A registration consumes one place without creating a booking or payment. Names accept `full_name` or `name`; `full_name` takes precedence unless null or absent. A duplicate normalized email on the same event returns `409 DUPLICATE_REGISTRATION`. Registrations and bookings share total capacity; registrations consume available general seats first, then early, then VIP. Full events return `409 EVENT_FULL`; ended events return `409 EVENT_ENDED`. There is no registration lookup endpoint.
+The ID and event ID above are illustrative. Use a future event with available seats. A registration consumes one place without creating a booking or payment. Names accept `full_name` or `name`; `full_name` takes precedence unless null or absent. A duplicate normalized email on the same event returns `409 DUPLICATE_REGISTRATION`. Registrations and bookings share total capacity; registrations consume available general seats first, then early, then VIP. Full events return `409 EVENT_FULL`; ended events return `409 EVENT_ENDED`. Registration lists require an event-authorized organizer token; POST does not expose other attendees.
 
 **POST `/api/bookings` request:**
 
@@ -165,7 +168,7 @@ Booking validation additionally requires:
 
 Extra request fields are ignored. Submitted prices, totals and fees are ignored. Early Bird price is `Math.round(event.price * 0.8)`, General Admission is `event.price`, and VIP is `Math.round(event.price * 1.75)`. Early capacity is `min(20, capacity)`; VIP is `min(15, max(0, capacity - 20))`; General gets the remainder. Subtotal is the sum of server prices times quantities; fee is `Math.round(subtotal * 0.05)`; total is subtotal plus fee.
 
-Booking creation returns `201` with `Location: /api/bookings/CR-<32 uppercase hex digits>`. Both creation and lookup return `{ "booking": { ... } }`, with these fields: `id`, `eventId`, the full `event`, `items` (`id`, `name`, `quantity`, `price`), `subtotal`, `fee`, `total`, `customer` (`name`, `email`, `phone`), `payment`, `createdAt` (UTC ISO string) and `demo: true`. Keep the returned reference exactly: the lookup route accepts `CR-` followed by 32 hex characters, but SQLite reference lookup is case sensitive. A malformed reference returns `404 NOT_FOUND`; a well-formed nonexistent reference returns `404 BOOKING_NOT_FOUND`.
+Booking creation returns `201` with `Location: /api/bookings/CR-<32 uppercase hex digits>` and `X-Booking-Token`, a signed receipt authorizing only that booking for 30 days. Lookup requires this receipt or an organizer API key authorized for the event, sent as `Authorization: Bearer <token>`. The reference alone no longer reveals personal information. Both creation and lookup retain `{ "booking": { ... } }`, with these fields: `id`, `eventId`, the full `event`, `items` (`id`, `name`, `quantity`, `price`), `subtotal`, `fee`, `total`, `customer` (`name`, `email`, `phone`), `payment`, `createdAt` (UTC ISO string) and `demo: true`. Keep the reference exactly; lookup is case sensitive. A malformed reference returns `404 NOT_FOUND`; an authenticated lookup of a well-formed nonexistent reference returns `404 BOOKING_NOT_FOUND`.
 
 This PowerShell example creates a future event, registers one attendee, books tickets, and retrieves the booking. It writes demo records to the database:
 
@@ -188,8 +191,10 @@ $bookingBody = @{
     customer = @{ name = 'Demo Attendee'; email = 'demo@example.com'; phone = '+92 300 1234567' }
     payment = 'demo-card'; consent = $true
 } | ConvertTo-Json -Depth 5
-$createdBooking = Invoke-RestMethod "$base/api/bookings" -Method Post -ContentType 'application/json' -Body $bookingBody
-Invoke-RestMethod "$base/api/bookings/$($createdBooking.booking.id)"
+$bookingResponse = Invoke-WebRequest -UseBasicParsing "$base/api/bookings" -Method Post -ContentType 'application/json' -Body $bookingBody
+$createdBooking = $bookingResponse.Content | ConvertFrom-Json
+$receipt = $bookingResponse.Headers['X-Booking-Token']
+Invoke-RestMethod "$base/api/bookings/$($createdBooking.booking.id)" -Headers @{ Authorization = "Bearer $receipt" }
 ```
 
 For this example the booking subtotal is `5025`, fee `251` and total `5276` PKR. IDs and creation timestamps vary.
@@ -214,6 +219,8 @@ Complete application error catalog (messages below are the response's `error.mes
 | --- | --- | --- |
 | 400 | `INVALID_JSON` | `Provide a valid JSON object.` — malformed JSON, invalid UTF-8, array, scalar or null |
 | 400 | `INVALID_PATH` | `Invalid URL encoding.` — malformed encoding in a static-file path |
+| 401 | `UNAUTHORIZED` | `A valid bearer token is required.` |
+| 403 | `FORBIDDEN` | `You do not have access to this event or booking.` |
 | 404 | `EVENT_NOT_FOUND` | `The requested event does not exist.` |
 | 404 | `BOOKING_NOT_FOUND` | `No booking was found for that reference.` |
 | 404 | `NOT_FOUND` | `The requested API endpoint does not exist.` for unmatched API routes; `File not found.` for disallowed/missing static files |
@@ -225,7 +232,10 @@ Complete application error catalog (messages below are the response's `error.mes
 | 413 | `PAYLOAD_TOO_LARGE` | `JSON payload must be 64 KB or less.` |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | `Send application/json.` |
 | 422 | `VALIDATION_ERROR` | `Please correct the submitted fields.` plus field-specific `details` |
-| 500 | `INTERNAL_ERROR` | `An unexpected server error occurred.` for uncoded internal errors; underlying runtime errors with a `code` may expose that code with the same generic message |
+| 500 | `INTERNAL_ERROR` | `An unexpected server error occurred.`; driver codes and connection details are not exposed |
+| 503 | `DATABASE_UNAVAILABLE` | `The database is unavailable.` on failed health checks |
+| 503 | `AUTH_NOT_CONFIGURED` | `Booking access is not configured.` when the signing secret is missing/too short |
+| 503 | `SERVICE_UNAVAILABLE` | `The API is not configured or is unavailable.` if hosted initialization fails |
 
 All three POST endpoints can return `400`, `413`, `415`, `422` and `500`; event registration and booking can additionally return `404` and `409`. Every recognized API endpoint can return `405` for an unsupported method and `500` for unexpected failures. A 405 response includes an `Allow` header (the current static handler advertises only `GET` despite also accepting HEAD). Malformed percent encoding in event ID route parameters currently produces `500`, whereas static-path decoding produces `400 INVALID_PATH`.
 
@@ -247,7 +257,7 @@ Examples of errors without field details:
 
 For example, `curl.exe -X POST http://localhost:3000/api/events -H "Content-Type: application/json" --data-raw '{oops'` returns the last response with HTTP 400.
 
-The database uses atomic SQLite transactions to prevent booking two people into the last remaining seat at the same time. See [Week 3 backend documentation](docs/week3-backend.md) for testing and limitations.
+PostgreSQL inventory writes use a transaction and an event-row `FOR UPDATE` lock before checking shared registration/booking stock; this works across separate function instances. Offline SQLite uses serialized `BEGIN IMMEDIATE` transactions. See [deployment and security setup](docs/vercel-deployment.md) and [Week 3 backend documentation](docs/week3-backend.md).
 
 ## Development
 
@@ -292,15 +302,17 @@ assets/
 
 ## Demo data and storage
 
-The backend seeds **22 fictional events** into SQLite and stores new events, simple event registrations, demo bookings and ticket quantities. The server calculates ticket prices and checks capacity atomically.
+The backend stores new events, registrations, demo bookings and ticket quantities in hosted PostgreSQL or offline SQLite. PostgreSQL is migrated and seeded explicitly; SQLite initializes **22 fictional events** locally. Seeding creates no attendees or bookings. The server calculates prices and checks capacity atomically.
 
 The existing frontend also retains a local cache of bookings for its confirmation and My Tickets displays, while favorites and newsletter demo entries remain in `localStorage`. The checkout and organizer forms submit new records to `/api` routes. Event discovery begins with bundled demo data; server-created events from another browser are available through the events API but the frontend has not fully transitioned to API-driven discovery. Ticket counts shown in the browser may therefore lag behind server inventory; the API enforces remaining stock before accepting a booking.
 
 The introductory animation uses `sessionStorage`. Cover images uploaded through the organizer page are previews stored in that browser; server-created events use a default image. Original `eventease_*` data is left untouched.
 
-No money is charged, no real card details are collected, no ticket is valid for admission, and no email is sent. This backend is **for local coursework only**: anyone with access to the server can create events or retrieve bookings by reference. Do not deploy it publicly with real personal information. Production requires identity and organizer permissions, rate limiting, secure image uploads, compliant payment integration, and stronger protections for attendee data.
+No money is charged, no real card details are collected, no ticket is valid for admission, and no email is sent. Event creation remains public for this coursework demo. Organizer attendee lists require a server-configured API key with explicit event permissions, and booking lookup requires a scoped receipt or authorized organizer key. This is not a full user-account system. Public commercial use still requires rate limiting, abuse controls, secure uploads, payment integration and attendee-data retention controls. See [the setup guide](docs/vercel-deployment.md) for credential handling and current limits.
 
 ## Verification
+
+The Vercel/PostgreSQL adaptation was verified locally with `npm.cmd test` (22 passed, 4 PostgreSQL-only checks explicitly skipped), `npm.cmd run test:postgres` (15 passed against an isolated real PostgreSQL cluster), and `npm.cmd run build`. PostgreSQL checks include migration idempotence, API/authorization behavior, independent-pool final-seat contention, reconnect persistence, rollback, the Vercel entry point and SQLite import. These results do not establish that the hosted site is deployed successfully; see the [hosted acceptance checks](docs/vercel-deployment.md#6-tests-and-acceptance-checks).
 
 `npm test` runs frontend and backend tests, including seven frontend tests covering mixed-ticket totals and fee rounding, catalog coverage, intersecting filters and sorting, ticket pool capacities, untrusted cart prices, invalid/duplicate quantities, overbooking and expired events.
 

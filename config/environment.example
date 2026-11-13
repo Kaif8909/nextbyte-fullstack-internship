@@ -1,0 +1,18 @@
+# Copy these placeholders into .env.local for local use, or enter them in
+# Vercel Project Settings > Environment Variables. Never fill this tracked file.
+# Use the provider's pooled connection URL for DATABASE_URL.
+DATABASE_URL=postgresql://USER:URL_ENCODED_PASSWORD@POOLER_HOST:PORT/DATABASE
+# Optional: direct/session URL for migrations and one-time import, local shell only.
+MIGRATION_DATABASE_URL=postgresql://USER:URL_ENCODED_PASSWORD@DIRECT_HOST:PORT/DATABASE
+# Generate >=32 random bytes. Required on Vercel; keep stable across deployments.
+BOOKING_TOKEN_SECRET=REPLACE_WITH_AT_LEAST_32_RANDOM_BYTES
+# Server-only hashes of separately generated organizer tokens, with explicit event IDs.
+# Empty means organizer attendee access is disabled. Never use event titles as IDs.
+ORGANIZER_CREDENTIALS=[]
+# Only if your provider needs a custom root certificate (PEM). Do not disable TLS verification.
+# DATABASE_CA_CERT=
+# Local alternative: path to a downloaded Supabase CA certificate.
+# DATABASE_CA_CERT_FILE=C:/path/to/supabase-ca.crt
+# Outside Vercel, a project-root supabase-ca.crt is also loaded automatically.
+# vercel.json already supplies this to keep raw JSON parsing and 64 KiB enforcement.
+NODEJS_HELPERS=0

@@ -1,5 +1,7 @@
 # Week 3: Backend API implementation
 
+> Deployment update: Vercel now has a function entry point and a PostgreSQL adapter; local SQLite remains available. See [Vercel deployment and migration](vercel-deployment.md) for current storage, organizer authorization, booking receipt tokens, setup and verification. The implementation notes below describe the original local Week 3 milestone; statements about unauthenticated booking lookup are superseded by that guide and the root README.
+
 ## What changed
 
 - Added a Node.js HTTP server at `server/index.js` that serves the same frontend and the `/api/*` REST endpoints on `http://localhost:3000`.

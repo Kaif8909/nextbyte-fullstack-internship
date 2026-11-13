@@ -3,6 +3,8 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { events as demoEvents } from '../assets/js/data.js';
+import { remainingPools } from './inventory.js';
+export { ticketPools } from './inventory.js';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 export const databasePath = process.env.DB_PATH || path.join(directory, 'data', 'eventease.sqlite');
@@ -99,38 +101,14 @@ export function listEvents(db) {
   return db.prepare(`SELECT ${columns} FROM events ORDER BY date ASC, title ASC`).all().map(eventFromRow);
 }
 
-export function ticketPools(event) {
-  const early = Math.min(20, event.capacity);
-  const vip = Math.min(15, Math.max(0, event.capacity - 20));
-  return [
-    { id: 'early', name: 'Early Bird', price: Math.round(event.price * 0.8), capacity: early },
-    { id: 'general', name: 'General Admission', price: event.price, capacity: event.capacity - early - vip },
-    { id: 'vip', name: 'VIP Experience', price: Math.round(event.price * 1.75), capacity: vip }
-  ];
-}
-
 export function availability(db, event) {
   const rows = db.prepare(`
     SELECT bi.type AS id, SUM(bi.quantity) AS sold
     FROM booking_items bi JOIN bookings b ON b.id = bi.booking_id
     WHERE b.event_id = ? GROUP BY bi.type
   `).all(event.id);
-  const booked = new Map(rows.map(row => [row.id, row.sold]));
   const registrations = db.prepare('SELECT COUNT(*) AS count FROM registrations WHERE event_id = ?').get(event.id).count;
-  const pools = ticketPools(event).map(pool => ({
-    ...pool,
-    remaining: Math.max(0, pool.capacity - (booked.get(pool.id) || 0))
-  }));
-  // Simple registrations take general seats first, then other available seats.
-  // This keeps registration + ticket bookings below the total event capacity.
-  let unallocated = registrations;
-  for (const id of ['general', 'early', 'vip']) {
-    const pool = pools.find(item => item.id === id);
-    const used = Math.min(pool.remaining, unallocated);
-    pool.remaining -= used;
-    unallocated -= used;
-  }
-  return pools;
+  return remainingPools(event, rows, registrations);
 }
 
 export function withinTransaction(db, fn) {

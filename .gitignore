@@ -2,10 +2,16 @@ node_modules/
 /.cache/
 /dist/
 /build/
+/public/
+.vercel/
 *.tsbuildinfo
 .env
 .env.*
+/supabase-ca.crt*
 *.pem
+*.crt
+*.cer
+*.pfx
 *.key
 *.p12
 .agents/

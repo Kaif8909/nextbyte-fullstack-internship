@@ -6,10 +6,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../server/db.js';
 import { createHandler } from '../server/api.js';
+import { sqliteStore } from '../server/sqlite-store.js';
+import { createAuth } from '../server/auth.js';
+import { createHash } from 'node:crypto';
+import { createPostgresPool, postgresStore } from '../server/postgres-store.js';
 
 let db;
 let server;
 let base;
+let store;
+const organizer = { tokenHash: createHash('sha256').update('test-organizer-key').digest('hex'), eventIds: [] };
+const authEnv = () => ({ BOOKING_TOKEN_SECRET: 'test-only-booking-signing-key-32-characters', ORGANIZER_CREDENTIALS: JSON.stringify([organizer]) });
 const headers = { 'content-type': 'application/json' };
 const person = { full_name: 'Demo Attendee', email: 'test@example.com' };
 const futureEvent = (title, capacity = 50) => ({
@@ -20,7 +27,7 @@ const futureEvent = (title, capacity = 50) => ({
   capacity, price: 4500
 });
 async function request(route, method = 'GET', data, customHeaders = headers) {
-  const options = { method, headers: method === 'GET' ? undefined : customHeaders };
+  const options = { method, headers: customHeaders };
   if (data !== undefined) options.body = typeof data === 'string' ? data : JSON.stringify(data);
   const response = await fetch(base + route, options);
   return { status: response.status, body: await response.json(), headers: response.headers };
@@ -32,17 +39,19 @@ async function createEvent(title, capacity) {
 }
 before(async () => {
   db = openDatabase(':memory:');
-  server = http.createServer(createHandler(db, { logErrors: false }));
+  store = process.env.TEST_DATABASE_URL ? postgresStore(createPostgresPool(process.env.TEST_DATABASE_URL)) : sqliteStore(db);
+  server = http.createServer((req, res) => createHandler(store, { logErrors: false, auth: createAuth(authEnv()) })(req, res));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
 after(async () => {
   await new Promise(resolve => server.close(resolve));
-  db.close();
+  await store.close();
+  if (process.env.TEST_DATABASE_URL) db.close();
 });
 
 test('health and events use JSON and include seeded demo catalog', async () => {
-  assert.deepEqual((await request('/api/health')).body, { status: 'ok', database: 'sqlite', demo: true });
+  assert.deepEqual((await request('/api/health')).body, { status: 'ok', database: store.kind, demo: true });
   const result = await request('/api/events?city=Karachi&category=Music');
   assert.equal(result.status, 200);
   assert.ok(result.body.events.length > 0);
@@ -93,7 +102,10 @@ test('ticket booking calculates trusted prices, creates a reference and persists
   assert.equal(posted.body.booking.fee, 754);
   assert.equal(posted.body.booking.total, 15829);
   assert.match(posted.body.booking.id, /^CR-[A-F0-9]{32}$/);
-  const read = await request(`/api/bookings/${posted.body.booking.id}`);
+  const token = posted.headers.get('x-booking-token');
+  assert.ok(token);
+  assert.equal((await request(`/api/bookings/${posted.body.booking.id}`)).status, 401);
+  const read = await request(`/api/bookings/${posted.body.booking.id}`, 'GET', undefined, { authorization: `Bearer ${token}` });
   assert.equal(read.status, 200);
   assert.equal(read.body.booking.customer.email, 'demo@site.test');
   const details = await request(`/api/events/${e.id}`);
@@ -163,4 +175,46 @@ test('SQLite records remain available after closing and reopening the database',
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test('attendee data requires organizer authentication and explicit event authorization', async () => {
+  const event = await createEvent('Protected Attendee Demo');
+  await request(`/api/events/${event.id}/registrations`, 'POST', person);
+  const route = `/api/events/${event.id}/registrations`;
+  assert.equal((await request(route)).status, 401);
+  assert.equal((await request(route, 'GET', undefined, { authorization: 'Bearer wrong' })).status, 401);
+  const authorized = { authorization: 'Bearer test-organizer-key' };
+  assert.equal((await request(route, 'GET', undefined, authorized)).status, 403);
+  organizer.eventIds.push(event.id);
+  const result = await request(route, 'GET', undefined, authorized);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.count, 1);
+  assert.equal(result.body.registrations[0].email, person.email);
+});
+
+test('receipt tokens cannot access another booking or organizer attendee lists', async () => {
+  const event = await createEvent('Scoped Booking Receipt Demo');
+  const payload = { eventId: event.id, items: [{ id: 'early', quantity: 1 }],
+    customer: { name: 'Receipt Person', email: 'receipt@example.com', phone: '+92 300 1234567' }, payment: 'demo-card', consent: true };
+  const first = await request('/api/bookings', 'POST', payload);
+  const second = await request('/api/bookings', 'POST', payload);
+  const receipt = { authorization: `Bearer ${first.headers.get('x-booking-token')}` };
+  assert.equal((await request(`/api/bookings/${second.body.booking.id}`, 'GET', undefined, receipt)).status, 403);
+  assert.equal((await request(`/api/events/${event.id}/registrations`, 'GET', undefined, receipt)).status, 401);
+  assert.equal((await request(`/api/bookings/${first.body.booking.id}`, 'GET', undefined, { authorization: 'Bearer test-organizer-key' })).status, 403);
+  organizer.eventIds.push(event.id);
+  assert.equal((await request(`/api/bookings/${first.body.booking.id}`, 'GET', undefined, { authorization: 'Bearer test-organizer-key' })).status, 200);
+});
+
+test('mixed concurrent registration and booking cannot oversell the final seat', async () => {
+  const event = await createEvent('Mixed Final Seat Demo', 1);
+  const booking = { eventId: event.id, items: [{ id: 'early', quantity: 1 }],
+    customer: { name: 'Seat Tester', email: 'seat@example.com', phone: '+92 300 1234567' }, payment: 'demo-wallet', consent: true };
+  const results = await Promise.all([
+    request('/api/bookings', 'POST', booking),
+    request(`/api/events/${event.id}/registrations`, 'POST', person)
+  ]);
+  assert.deepEqual(results.map(result => result.status).sort(), [201, 409]);
+  const details = await request(`/api/events/${event.id}`);
+  assert.equal(details.body.tickets.reduce((n, pool) => n + pool.remaining, 0), 0);
 });
