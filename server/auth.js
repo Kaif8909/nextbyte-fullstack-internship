@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { ApiError } from './validation.js';
+import { initializationError } from './diagnostics.js';
 
 const unauthorized = () => new ApiError(401, 'UNAUTHORIZED', 'A valid bearer token is required.');
 const forbidden = () => new ApiError(403, 'FORBIDDEN', 'You do not have access to this event or booking.');
@@ -12,7 +13,7 @@ export function createAuth(env = process.env) {
       !/^[a-f0-9]{64}$/.test(item.tokenHash) || !Array.isArray(item.eventIds) ||
       item.eventIds.some(id => typeof id !== 'string' || !id || id === '*')))
       throw new Error('Invalid credential mapping');
-  } catch { throw new Error('ORGANIZER_CREDENTIALS must contain tokenHash and explicit eventIds arrays.'); }
+  } catch { throw initializationError('ORGANIZER_CONFIG_INVALID'); }
   function signingKey() {
     if (!secret || Buffer.byteLength(secret) < 32)
       throw new ApiError(503, 'AUTH_NOT_CONFIGURED', 'Booking access is not configured.');

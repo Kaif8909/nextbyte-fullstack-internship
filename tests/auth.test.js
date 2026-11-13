@@ -21,7 +21,7 @@ test('receipt signatures reject forgery, malformed data and expiration', () => {
   assert.throws(() => auth.authenticate(req('bad-json.signature')), { status: 401 });
 });
 test('hosted storage never falls back to SQLite and missing auth fails closed', async () => {
-  await assert.rejects(openStore({ hosted: true, env: {} }), /DATABASE_URL/);
+  await assert.rejects(openStore({ hosted: true, env: {} }), { code: 'DATABASE_URL_MISSING' });
   assert.throws(() => createAuth({}).assertBookingConfigured(), { status: 503 });
   assert.throws(() => createAuth({ ORGANIZER_CREDENTIALS: '[{"tokenHash":"invalid","eventIds":["*"]}]' }));
 });

@@ -10,6 +10,8 @@ Hosted requests require PostgreSQL and never fall back to SQLite or `/tmp`. Loca
 
 These files are prepared locally. They do not prove a successful Vercel deployment, and no live attendee data has been migrated without database access.
 
+Initialization failures now emit a sanitized `eventease_initialization_failed` JSON entry in Vercel Runtime Logs. It contains only fixed initialization stages, allowlisted error categories/codes/types and boolean presence checks for server configuration. It never includes exception messages/stacks, URLs, certificate text, tokens or attendee data. The public HTTP 503 response stays unchanged. Search logs for this event to distinguish missing/invalid URLs, malformed CA certificates, import failures, organizer configuration and actual TLS/network/database authentication failures. Function initialization performs `SELECT 1` before caching its request handler and closes a failed pool before retrying. CA parsing accepts real newlines and literal `\n` sequences, but rejects quoted/malformed/non-CA PEM data.
+
 ## 1. Provision a database
 
 Create a PostgreSQL project in Supabase or Neon. Choose a region near the Vercel function region. Obtain the provider's **pooled** PostgreSQL connection string for the runtime; URL-encode special characters in passwords. For Supabase, use the Connect dialog's transaction pooler for serverless traffic. For Neon, use the pooled endpoint. Use a separate preview/test database instead of pointing previews at production attendee data.

@@ -2,17 +2,23 @@ import pg from 'pg';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { remainingPools } from './inventory.js';
+import { normalizeCaCertificate, parseDatabaseUrl } from './postgres-config.js';
+import { initializationError } from './diagnostics.js';
 
 const columns = 'id,title,description,category,city,venue,date,organizer,price,capacity,image,popularity,duration,highlights,schedule';
 export function createPostgresPool(connectionString) {
-  if (!connectionString) throw new Error('DATABASE_URL is required.');
-  const url = new URL(connectionString);
+  const url = parseDatabaseUrl(connectionString);
   // Hosted connections require certificate verification, including provider CA support.
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   const localCertificate = fileURLToPath(new URL('../supabase-ca.crt', import.meta.url));
   const certificateFile = process.env.DATABASE_CA_CERT_FILE ||
     (!process.env.VERCEL && existsSync(localCertificate) ? localCertificate : undefined);
-  const ca = process.env.DATABASE_CA_CERT || (certificateFile ? readFileSync(certificateFile, 'utf8') : undefined);
+  let certificate = process.env.DATABASE_CA_CERT;
+  if (!certificate && certificateFile) {
+    try { certificate = readFileSync(certificateFile, 'utf8'); }
+    catch { throw initializationError('DATABASE_CA_FILE_UNREADABLE'); }
+  }
+  const ca = normalizeCaCertificate(certificate);
   for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) url.searchParams.delete(key);
   const pool = new pg.Pool({
     connectionString: url.toString(), max: 3, connectionTimeoutMillis: 10000,
